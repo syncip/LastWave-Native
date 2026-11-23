@@ -118,8 +118,8 @@ object SettingsSearchIndex {
                     icon = Icons.Filled.HighQuality,
                     iconContainer = { MaterialTheme.colorScheme.primaryContainer },
                     iconTint = { MaterialTheme.colorScheme.onPrimaryContainer },
-                    parentTab = SettingsTab.AUDIO,
-                    section = "Audio & Playback",
+                    parentTab = SettingsTab.SOURCES,
+                    section = "Playback source",
                     type = EntryType.ACTION,
                 )
             )
@@ -132,8 +132,8 @@ object SettingsSearchIndex {
                     icon = Icons.Filled.HighQuality,
                     iconContainer = { MaterialTheme.colorScheme.secondaryContainer },
                     iconTint = { MaterialTheme.colorScheme.onSecondaryContainer },
-                    parentTab = SettingsTab.AUDIO,
-                    section = "Audio & Playback",
+                    parentTab = SettingsTab.SOURCES,
+                    section = "Playback source",
                     type = EntryType.ACTION,
                 )
             )
@@ -166,8 +166,8 @@ object SettingsSearchIndex {
                     icon = Icons.Filled.HighQuality,
                     iconContainer = { MaterialTheme.colorScheme.secondaryContainer },
                     iconTint = { MaterialTheme.colorScheme.onSecondaryContainer },
-                    parentTab = SettingsTab.AUDIO,
-                    section = "Audio & Playback",
+                    parentTab = SettingsTab.SOURCES,
+                    section = "Playback source",
                     type = EntryType.TOGGLE,
                 )
             )
@@ -1159,7 +1159,7 @@ object SettingsSearchIndex {
                     icon = Icons.Filled.AutoAwesome,
                     iconContainer = { MaterialTheme.colorScheme.tertiaryContainer },
                     iconTint = { MaterialTheme.colorScheme.onTertiaryContainer },
-                    parentTab = SettingsTab.SPOTIFY,
+                    parentTab = SettingsTab.SOURCES,
                     section = "Recommendations",
                     type = EntryType.ACTION,
                 )

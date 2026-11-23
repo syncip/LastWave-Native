@@ -1077,6 +1077,22 @@ class LosslessMusicApi @Inject constructor(
     }
 
     /** Search hits that pass identity verification, best first (language-gated). */
+    private fun AddonTrack.toCandidate() = TidalCandidateItem(
+        id = id.toLongOrNull() ?: id.hashCode().toLong(),
+        title = title,
+        duration = duration.toInt(),
+        performerName = artist,
+        albumArtistName = artist,
+        albumTitle = album,
+        performers = artist,
+        isAtmos = isDolbyAtmos || atmos || audioModes.any { it.contains("DOLBY", ignoreCase = true) || it.contains("ATMOS", ignoreCase = true) },
+        isSpatial = audioModes.any { it.contains("360", ignoreCase = true) || it.contains("SPATIAL", ignoreCase = true) },
+        rawAddonId = id,
+        audioQuality = audioQuality,
+        bitDepth = bitDepth,
+        directStreamUrl = directStreamUrl,
+    )
+
     private fun verifiedCandidates(
         tracks: List<AddonTrack>,
         title: String,
@@ -1086,23 +1102,7 @@ class LosslessMusicApi @Inject constructor(
         isAtmosPreferred: Boolean,
     ): List<TidalCandidateItem>? {
         val scored = tracks.asSequence()
-            .map { track ->
-                TidalCandidateItem(
-                    id = track.id.toLongOrNull() ?: track.id.hashCode().toLong(),
-                    title = track.title,
-                    duration = track.duration.toInt(),
-                    performerName = track.artist,
-                    albumArtistName = track.artist,
-                    albumTitle = track.album,
-                    performers = track.artist,
-                    isAtmos = track.isDolbyAtmos || track.atmos || track.audioModes.any { it.contains("DOLBY", ignoreCase = true) || it.contains("ATMOS", ignoreCase = true) },
-                    isSpatial = track.audioModes.any { it.contains("360", ignoreCase = true) || it.contains("SPATIAL", ignoreCase = true) },
-                    rawAddonId = track.id,
-                    audioQuality = track.audioQuality,
-                    bitDepth = track.bitDepth,
-                    directStreamUrl = track.directStreamUrl,
-                )
-            }
+            .map { it.toCandidate() }
             .mapNotNull { item ->
                 verifiedMatchScore(
                     item = item,
@@ -1159,6 +1159,38 @@ class LosslessMusicApi @Inject constructor(
             ordered.filter { !isAtmosCandidate(it) }.ifEmpty { ordered }
         }
 
+    /** One TIDAL recording of a song, as offered in the player's version picker. */
+    data class TidalVersion(val id: String, val title: String, val album: String, val durationSec: Int, val hiRes: Boolean)
+
+    /** Versions picked in the player, by song; they win over matching until the app restarts. */
+    private val pinnedTidalIds = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    private fun pinKey(title: String, artist: String) = "${title.lowercase(Locale.ROOT)}|${artist.lowercase(Locale.ROOT)}"
+
+    fun pinTidalVersion(title: String, artist: String, id: String) {
+        pinnedTidalIds[pinKey(title, artist)] = id
+    }
+
+    fun hasPinnedTidalVersion(title: String, artist: String): Boolean = pinnedTidalIds.containsKey(pinKey(title, artist))
+
+    val isTidalSignedIn: Boolean get() = tidalAccount.isLoggedIn
+
+    /** Every TIDAL recording of this song by this artist, other cuts included. */
+    suspend fun tidalVersions(title: String, artist: String): List<TidalVersion> = withContext(Dispatchers.IO) {
+        val plan = addonSearchPlan(title, artist, null, QUALITY_MAX_HI_RES)
+        val query = plan.queries.firstOrNull() ?: return@withContext emptyList()
+        val matchArtist = cleanForSearch(artist).ifBlank { artist }
+        val core = parseTitle(title, matchArtist).core
+        tidalSource.search(query, plan.qualityParam, false).getOrNull().orEmpty()
+            .map { it.toCandidate() }
+            .filter {
+                parseTitle(it.title, it.performerName, it.albumTitle).core == core &&
+                    isVerifiedArtistMatch(matchArtist, it.performerName, it.albumArtistName, it.performers)
+            }
+            .distinctBy { it.id }
+            .map { TidalVersion(it.rawAddonId.ifBlank { it.id.toString() }, it.title, it.albumTitle, it.duration, it.isHiResFlagged()) }
+    }
+
     private suspend fun resolveFromAddon(
         title: String,
         artist: String,
@@ -1178,6 +1210,7 @@ class LosslessMusicApi @Inject constructor(
 
         var candidates: List<TidalCandidateItem> = emptyList()
         var candidatePositions: Map<String, Int> = emptyMap()
+        var searchAnswered = false
         for (query in queries) {
             currentCoroutineContext().ensureActive()
             val searchResult = addonClient.search(query, qualityParam, isAtmosPreferred)
@@ -1194,7 +1227,14 @@ class LosslessMusicApi @Inject constructor(
                 continue
             }
             val tracks = searchResult.getOrNull() ?: continue
+            searchAnswered = true
             if (tracks.isEmpty()) continue
+            val pinnedId = pinnedTidalIds[pinKey(title, artist)]?.takeIf { addonBaseUrl == TidalSource.BASE_URL }
+            val pinned = pinnedId?.let { id -> tracks.firstOrNull { it.id == id } }?.toCandidate()
+            if (pinned != null) {
+                candidates = listOf(pinned)
+                break
+            }
 
             val gated = verifiedCandidates(tracks, title, artist, expectedDurationSeconds, expectedAlbum, isAtmosPreferred)
             if (gated == null) {
@@ -1212,6 +1252,9 @@ class LosslessMusicApi @Inject constructor(
 
         if (candidates.isEmpty()) {
             Log.w(TAG, "resolveFromAddon: No matching candidate found for '$title' by '$artist'")
+            if (searchAnswered && addonBaseUrl == TidalSource.BASE_URL) {
+                currentCoroutineContext()[AddonTrackMatched]?.notOnTidal = true
+            }
             return null
         }
         currentCoroutineContext()[AddonTrackMatched]?.matched = true

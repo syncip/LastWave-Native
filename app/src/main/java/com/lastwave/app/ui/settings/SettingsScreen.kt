@@ -23,6 +23,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Vibration
 import com.lastwave.app.data.local.CELLULAR_QUALITY_AUTO
 import com.lastwave.app.data.local.musicHapticsConfig
@@ -309,6 +310,13 @@ enum class SettingsTab(
     val subtitle: String,
     val icon: androidx.compose.ui.graphics.vector.ImageVector,
 ) {
+    SOURCES(
+        titleRes = R.string.set_cat_sources,
+        subtitleRes = R.string.set_cat_sources_sub,
+        title = "Sources",
+        subtitle = "TIDAL account, playback source & fallback, recommendations",
+        icon = Icons.Filled.MusicNote,
+    ),
     AUDIO(
         titleRes = R.string.set_cat_audio,
         subtitleRes = R.string.set_cat_audio_sub,
@@ -680,9 +688,18 @@ fun SettingsScreen(
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 SectionLabel("Services & Add-ons")
-                                SettingsGroup(rowCount = 4) { index, position ->
+                                SettingsGroup(rowCount = 5) { index, position ->
                                     when (index) {
                                         0 -> SettingsActionCard(
+                                            icon = Icons.Filled.MusicNote,
+                                            iconContainer = MaterialTheme.colorScheme.primaryContainer,
+                                            iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            title = stringResource(R.string.set_cat_sources),
+                                            subtitle = stringResource(R.string.set_cat_sources_sub),
+                                            onClick = { activeTab = SettingsTab.SOURCES },
+                                            position = position,
+                                        )
+                                        1 -> SettingsActionCard(
                                             icon = Icons.Filled.Extension,
                                             iconContainer = MaterialTheme.colorScheme.tertiaryContainer,
                                             iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -692,7 +709,7 @@ fun SettingsScreen(
                                             position = position,
                                             isHighlighted = (highlightedSettingId == "services.modules" || highlightedSettingId == "library.modules"),
                                         )
-                                        1 -> SettingsActionCard(
+                                        2 -> SettingsActionCard(
                                             icon = Icons.Filled.Album,
                                             iconContainer = MaterialTheme.colorScheme.primaryContainer,
                                             iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -701,7 +718,7 @@ fun SettingsScreen(
                                             onClick = { activeTab = SettingsTab.SCROBBLERS },
                                             position = position,
                                         )
-                                        2 -> SettingsActionCard(
+                                        3 -> SettingsActionCard(
                                             icon = Icons.Filled.CloudSync,
                                             iconContainer = MaterialTheme.colorScheme.secondaryContainer,
                                             iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -801,25 +818,15 @@ fun SettingsScreen(
                         }
                     }
 
-                    SettingsTab.AUDIO -> {
-                        item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    SectionLabel(stringResource(R.string.settings_section_audio))
-                    val wifiQualitySubtitle = streamingQualityLabel(misc.wifiStreamingQuality)
-                    val cellularQualitySubtitle = streamingQualityLabel(misc.cellularStreamingQuality)
-                    val downloadQualitySubtitle = when (misc.downloadQuality) {
-                        28 -> "Dolby Atmos (Spatial Immersive Audio)"
-                        27 -> "Hi-Res (24-bit / 192 kHz FLAC)"
-                        7 -> "Hi-Res (24-bit / 96 kHz FLAC)"
-                        6 -> "CD Lossless (16-bit / 44.1 kHz FLAC)"
-                        5 -> "Standard (320 kbps MP3)"
-                        4 -> "Data Saver (96 kbps HE-AAC)"
-                        -1 -> "YouTube Music (AAC / Opus)"
-                        else -> "Hi-Res (24-bit / 192 kHz FLAC)"
-                    }
+                    SettingsTab.SOURCES -> {
+                        item { TidalAccountSection() }
 
-                    val isIgnored = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
-                    val audioRows = buildList<@Composable (GroupPosition) -> Unit> {
+                        item {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                SectionLabel(stringResource(R.string.settings_section_playback_source))
+                                val wifiQualitySubtitle = streamingQualityLabel(misc.wifiStreamingQuality)
+                                val cellularQualitySubtitle = streamingQualityLabel(misc.cellularStreamingQuality)
+                                val sourceRows = buildList<@Composable (GroupPosition) -> Unit> {
                         add { position ->
                             SettingsActionCard(
                                 icon = Icons.Filled.Wifi,
@@ -852,18 +859,6 @@ fun SettingsScreen(
                         }
                         add { position ->
                             SettingsActionCard(
-                                icon = Icons.Filled.CloudDownload,
-                                iconContainer = MaterialTheme.colorScheme.secondaryContainer,
-                                iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                title = stringResource(R.string.settings_download_quality),
-                                subtitle = "$downloadQualitySubtitle \u2022 Lossless & YouTube",
-                                onClick = { showDownloadQualityDialog = true },
-                                position = position,
-                                isHighlighted = (highlightedSettingId == "audio.download_quality"),
-                            )
-                        }
-                        add { position ->
-                            SettingsActionCard(
                                 icon = Icons.Filled.HighQuality,
                                 iconContainer = MaterialTheme.colorScheme.secondaryContainer,
                                 iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -872,6 +867,64 @@ fun SettingsScreen(
                                 onClick = { showHiResStartDialog = true },
                                 position = position,
                                 isHighlighted = (highlightedSettingId == "audio.auto_upgrade_hi_res"),
+                            )
+                        }
+                                }
+                                SettingsGroup(rowCount = sourceRows.size) { index, position -> sourceRows[index](position) }
+                            }
+                        }
+
+                        item {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                SectionLabel(stringResource(R.string.settings_section_recommendations))
+                                SettingsGroup(rowCount = 1) { _, position ->
+                                    SettingsActionCard(
+                                        icon = Icons.Filled.AutoAwesome,
+                                        iconContainer = MaterialTheme.colorScheme.tertiaryContainer,
+                                        iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        title = stringResource(R.string.settings_recommendations_title),
+                                        subtitle = if (spotifyConnected || tidalConnected) {
+                                            "${stringResource(misc.recommendationSource.titleRes)} • ${stringResource(misc.recommendationSource.subtitleRes)}"
+                                        } else {
+                                            stringResource(R.string.settings_recommendations_sub_disconnected)
+                                        },
+                                        onClick = { showRecommendationSourceDialog = true },
+                                        position = position,
+                                        isHighlighted = (highlightedSettingId == "spotify.recommendations"),
+                                    )
+                                }
+                            }
+                        }
+
+                    }
+
+                    SettingsTab.AUDIO -> {
+                        item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SectionLabel(stringResource(R.string.settings_section_audio))
+                    val downloadQualitySubtitle = when (misc.downloadQuality) {
+                        28 -> "Dolby Atmos (Spatial Immersive Audio)"
+                        27 -> "Hi-Res (24-bit / 192 kHz FLAC)"
+                        7 -> "Hi-Res (24-bit / 96 kHz FLAC)"
+                        6 -> "CD Lossless (16-bit / 44.1 kHz FLAC)"
+                        5 -> "Standard (320 kbps MP3)"
+                        4 -> "Data Saver (96 kbps HE-AAC)"
+                        -1 -> "YouTube Music (AAC / Opus)"
+                        else -> "Hi-Res (24-bit / 192 kHz FLAC)"
+                    }
+
+                    val isIgnored = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
+                    val audioRows = buildList<@Composable (GroupPosition) -> Unit> {
+                        add { position ->
+                            SettingsActionCard(
+                                icon = Icons.Filled.CloudDownload,
+                                iconContainer = MaterialTheme.colorScheme.secondaryContainer,
+                                iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                title = stringResource(R.string.settings_download_quality),
+                                subtitle = "$downloadQualitySubtitle \u2022 Lossless & YouTube",
+                                onClick = { showDownloadQualityDialog = true },
+                                position = position,
+                                isHighlighted = (highlightedSettingId == "audio.download_quality"),
                             )
                         }
                         add { position ->
@@ -1832,6 +1885,7 @@ fun SettingsScreen(
             }
         }
 
+                        item { NetworkProxySection() }
         }
 
                     SettingsTab.SPOTIFY -> {
@@ -1905,30 +1959,6 @@ fun SettingsScreen(
                                             isHighlighted = (highlightedSettingId == "spotify.live_playlists"),
                                         )
                                     }
-                                }
-                            }
-                        }
-
-                        item { NetworkProxySection() }
-
-                        item {
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                SectionLabel(stringResource(R.string.settings_section_recommendations))
-                                SettingsGroup(rowCount = 1) { _, position ->
-                                    SettingsActionCard(
-                                        icon = Icons.Filled.AutoAwesome,
-                                        iconContainer = MaterialTheme.colorScheme.tertiaryContainer,
-                                        iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
-                                        title = stringResource(R.string.settings_recommendations_title),
-                                        subtitle = if (spotifyConnected || tidalConnected) {
-                                            "${stringResource(misc.recommendationSource.titleRes)} • ${stringResource(misc.recommendationSource.subtitleRes)}"
-                                        } else {
-                                            stringResource(R.string.settings_recommendations_sub_disconnected)
-                                        },
-                                        onClick = { showRecommendationSourceDialog = true },
-                                        position = position,
-                                        isHighlighted = (highlightedSettingId == "spotify.recommendations"),
-                                    )
                                 }
                             }
                         }

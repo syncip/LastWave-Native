@@ -276,6 +276,7 @@ import com.lastwave.app.data.playlist.PlaylistRepository
 import com.lastwave.app.data.playlist.SavedPlaylist
 import com.lastwave.app.data.playlist.LIKED_SONGS_MODE
 import com.lastwave.app.playback.MusicPlayer
+import com.lastwave.app.playback.mediaIdKey
 import com.lastwave.app.playback.MusicPlayerState
 import com.lastwave.app.playback.PlaybackChromeState
 import com.lastwave.app.playback.formatSampleRateKHz
@@ -374,11 +375,24 @@ internal class BadgeTransitionHold {
 internal fun AppleMusicQualityBadge(
     state: MusicPlayerState,
     signalPath: SignalPathReport,
+    player: MusicPlayer,
     isTranslucent: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val haptics = LocalHapticFeedback.current
+    var showVersions by remember { mutableStateOf(false) }
+    if (showVersions) {
+        TidalVersionsDialog(
+            player = player,
+            playingDurationMs = state.durationMs,
+            onSignalPath = onClick,
+            onDismiss = { showVersions = false },
+        )
+    }
+    val openBadge = {
+        if (state.streamOrigin == "YouTube" && player.canPickTidalVersion) showVersions = true else onClick()
+    }
     val isSpatial = remember(state.audioCodec) { isSpatialAudioCodec(state.audioCodec) }
     val isHiRes = state.isLossless && ((state.samplingRateKHz ?: 44.1) > 48.0 || (state.bitDepth ?: 16) > 16)
     val switch = state.qualitySwitch
@@ -499,11 +513,11 @@ internal fun AppleMusicQualityBadge(
                 .combinedClickable(
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onClick()
+                        openBadge()
                     },
                     onLongClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onClick()
+                        openBadge()
                     },
                 )
                 .padding(
@@ -523,7 +537,10 @@ internal fun AppleMusicQualityBadge(
             )
             Spacer(Modifier.width(androidx.compose.ui.unit.lerp(4.dp, 5.dp, mix)))
             // Where the audio comes from ("TIDAL: Lossless", "YouTube: Opus").
+            val notOnTidal = state.notOnTidalMediaId != null && state.notOnTidalMediaId == state.current?.mediaIdKey()
+            val notOnTidalLabel = androidx.compose.ui.res.stringResource(com.lastwave.app.R.string.player_not_on_tidal)
             val origin = state.streamOrigin?.takeIf { it.isNotBlank() && !isMixActive && !isFadeActive && switch == null }
+                ?.let { if (it == "YouTube" && notOnTidal) "$it ($notOnTidalLabel)" else it }
             val fullText = origin?.let { "$it: " }.orEmpty() + when {
                 isMixActive || isFadeActive || switch != null -> displayTitle
                 baseLabel.isNotBlank() && !baseLabel.equals(displayTitle, ignoreCase = true) && !baseLabel.equals("AUDIO", ignoreCase = true) -> "$displayTitle \u2022 $baseLabel"

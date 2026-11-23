@@ -544,6 +544,14 @@ class MusicPlayer @Inject constructor(
     private var appVolumePersistJob: Job? = null
     private var retryMediaId: String? = null
     internal val losslessBypassMediaIds = ConcurrentHashMap.newKeySet<String>()
+    /** Songs TIDAL answered "no match" for; a replay skips straight to the badge. */
+    private val notOnTidalMediaIds = ConcurrentHashMap.newKeySet<String>()
+
+    private fun markNotOnTidal(mediaId: String) {
+        if (notOnTidalMediaIds.size > 2_000) notOnTidalMediaIds.clear()
+        notOnTidalMediaIds += mediaId
+        _state.update { if (it.current?.mediaIdKey() == mediaId) it.copy(notOnTidalMediaId = mediaId) else it }
+    }
     // Written by the settings collector, read on the main thread.
     @Volatile
     internal var bitPerfectEnabled = false
@@ -2113,6 +2121,11 @@ class MusicPlayer @Inject constructor(
 
     init {
         zeroVolumePlaybackObserver.register()
+        applicationScope.launch {
+            _state.map { it.current?.mediaIdKey() }.distinctUntilChanged().collect { key ->
+                if (key != null && key in notOnTidalMediaIds) _state.update { it.copy(notOnTidalMediaId = key) }
+            }
+        }
         applicationScope.launch {
             autoMixCoordinator.get().telemetry.collect { tel ->
                 _state.update { it.copy(deckBlendTelemetry = tel) }
@@ -6682,6 +6695,41 @@ class MusicPlayer @Inject constructor(
             atmosSupported = isSpatialAudioSupportedOnDevice(),
         )
 
+    val canPickTidalVersion: Boolean get() = losslessMusicApi.isTidalSignedIn
+
+    suspend fun tidalVersions(): List<LosslessMusicApi.TidalVersion> =
+        _state.value.current?.let { losslessMusicApi.tidalVersions(it.title, it.artist) }.orEmpty()
+
+    /** Plays the picked TIDAL recording from 0:00; replays this session keep it. */
+    fun playTidalVersion(id: String) {
+        val track = _state.value.current ?: return
+        val mediaId = track.mediaIdKey()
+        losslessMusicApi.pinTidalVersion(track.title, track.artist, id)
+        applicationScope.launch(Dispatchers.IO) {
+            val stream = runCatching { resolveLosslessTrackAudioStream(track, latestPlaybackSettings) }.getOrNull()
+            if (stream == null) {
+                android.util.Log.w("MusicPlayer", "[VERSION] TIDAL version $id of '${track.title}' did not resolve")
+                return@launch
+            }
+            withContext(Dispatchers.Main.immediate) {
+                if (!playerDelegate.isInitialized() || _state.value.current?.mediaIdKey() != mediaId) return@withContext
+                val index = player.currentMediaItemIndex
+                if (index !in 0 until player.mediaItemCount) return@withContext
+                val item = track.toMediaItem(stream)
+                swappingMediaId = item.mediaId
+                registerPreparedStream(stream)
+                replaceMediaItemPreservingShuffle(index, item)
+                player.seekTo(index, 0L)
+                player.prepare()
+                player.play()
+                publishResolvedQuality(stream, expectedMediaId = mediaId)
+                cacheCurrentTrackStream(stream)
+                applyDacRoutingFor(dacRateFor(stream), stream.audioCodec)
+                updateBitPerfectState()
+            }
+        }
+    }
+
     private suspend fun resolveLosslessTrackAudioStream(
         track: PlayableTrack,
         misc: MiscSettings,
@@ -6691,7 +6739,10 @@ class MusicPlayer @Inject constructor(
     ): ResolvedStream? {
         val atmosSupported = isSpatialAudioSupportedOnDevice()
         val effectiveQuality = effectiveLosslessQuality(misc, requestedQuality)
-        val stream = losslessMusicApi.resolveStream(
+        // Startup passes its own probe (it also reads `matched`); upgrades get a fresh one.
+        val probe = currentCoroutineContext()[AddonTrackMatched] ?: AddonTrackMatched()
+        val stream = withContext(probe) {
+            losslessMusicApi.resolveStream(
             title = track.title,
             artist = track.artist,
             expectedDurationSeconds = expectedDurationSeconds,
@@ -6713,7 +6764,11 @@ class MusicPlayer @Inject constructor(
             )
         } else {
             null
-        } ?: return null
+        }
+        } ?: run {
+            if (probe.notOnTidal) markNotOnTidal(track.mediaIdKey())
+            return null
+        }
 
         if (stream.url.isBlank() || stream.url in excludedLosslessUrls) return null
         // 320 kbps and Data Saver are caps, not minimums. Some addons answer a
@@ -7572,9 +7627,20 @@ class MusicPlayer @Inject constructor(
                     if (playerDelegate.isInitialized()) player.duration.takeIf { it > 0L } else null
                 }
                 val upgradedDurationMs = upgraded.durationMs?.takeIf { it > 0L }
-                if (!aboveLimit && playingDurationMs != null && upgradedDurationMs != null &&
+                val lengthDiffers = !aboveLimit && playingDurationMs != null && upgradedDurationMs != null &&
                     kotlin.math.abs(playingDurationMs - upgradedDurationMs) > HOT_SWAP_MAX_LENGTH_DRIFT_MS
-                ) {
+                // A cut the listener picked restarts the song: there is no position to line up.
+                val restartOnOtherVersion = lengthDiffers && upgraded.isLossless &&
+                    losslessMusicApi.hasPinnedTidalVersion(track.title, track.artist) &&
+                    currentPos <= OTHER_VERSION_RESTART_WINDOW_MS
+                if (restartOnOtherVersion) {
+                    android.util.Log.i(
+                        "MusicPlayer",
+                        "[STREAM UPGRADE] '${track.title}': restarting on the ${upgradedDurationMs}ms version " +
+                            "instead of ${playingDurationMs}ms playing",
+                    )
+                }
+                if (lengthDiffers && !restartOnOtherVersion) {
                     switchOutcome = "length-mismatch"
                     android.util.Log.w(
                         "MusicPlayer",
@@ -7704,7 +7770,11 @@ class MusicPlayer @Inject constructor(
 
                 // Pre-audition on silent background player before touching active playback
                 var swapCandidate = upgraded
-                val firstAttempt = validateAndMeasure(swapCandidate, knownDur)
+                val firstAttempt = if (restartOnOtherVersion) {
+                    auditionStream(track, swapCandidate, targetPositionMs = 0L, expectedDurationMs = knownDur, generation = generation) to null
+                } else {
+                    validateAndMeasure(swapCandidate, knownDur)
+                }
                 var auditionSuccess = firstAttempt.first
                 var lagChoice = firstAttempt.second
                 if (!auditionSuccess && upgraded.audioCodec == "DOLBY ATMOS") {
@@ -7796,7 +7866,7 @@ class MusicPlayer @Inject constructor(
                     suspend fun overlap() = overlapSwapToStandby(track, swapCandidate, currentIndex, generation, alignedLagMs) {
                         candidateAllowed(swapCandidate)
                     }
-                    var outcome = overlap()
+                    var outcome = if (restartOnOtherVersion) OverlapSwap.Unavailable else overlap()
                     // A line-up can miss (late seek, a standby that stalls). The
                     // live player was not touched, so it is simply tried again.
                     repeat(2) {
@@ -7831,7 +7901,7 @@ class MusicPlayer @Inject constructor(
                     val playWhenReady = player.playWhenReady
                     val updatedMediaItem = track.toMediaItem(swapCandidate)
                     // Exact, not nearest sync point: the swap must land on the same audio.
-                    val swapTargetMs = (player.currentPosition + alignedLagMs).coerceAtLeast(0L)
+                    val swapTargetMs = if (restartOnOtherVersion) 0L else (player.currentPosition + alignedLagMs).coerceAtLeast(0L)
                     val swappedPlayer = player
                     swappedPlayer.setSeekParameters(SeekParameters.EXACT)
 
@@ -9120,6 +9190,8 @@ class MusicPlayer @Inject constructor(
         const val LOSSLESS_BACKGROUND_BUDGET_MS = 30_000L
         /** Largest runtime gap between the playing stream and a mid-song swap candidate. */
         const val HOT_SWAP_MAX_LENGTH_DRIFT_MS = 3_000L
+        /** Past this, jumping back to 0:00 for another cut costs more than it gives. */
+        const val OTHER_VERSION_RESTART_WINDOW_MS = 20_000L
         const val HOT_SWAP_PROBE_SPEED = 4f
         const val HOT_SWAP_PROBE_TIMEOUT_MS = 8_000L
         const val HOT_SWAP_READY_TIMEOUT_MS = 6_000L

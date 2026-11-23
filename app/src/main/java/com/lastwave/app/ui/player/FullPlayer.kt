@@ -2000,6 +2000,7 @@ internal fun FullPlayer(
                                     AppleMusicQualityBadge(
                                         state = state,
                                         signalPath = signalPath,
+                                        player = player,
                                         isTranslucent = LocalLiquidGlass.current || showFullBleed,
                                         onClick = { showSignalPath = true },
                                         modifier = Modifier.offset(y = (-2).dp),

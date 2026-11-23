@@ -282,6 +282,11 @@ internal fun getTargetSectionIndex(settingId: String?): Int {
         }
         SettingsTab.YOUTUBE -> if (entry.section == "Liked Songs") 1 else 0
         SettingsTab.SPOTIFY -> 0
+        SettingsTab.SOURCES -> when (entry.section) {
+            "Playback source" -> 1
+            "Recommendations" -> 2
+            else -> 0
+        }
         SettingsTab.LIBRARY -> when (entry.section) {
             "Content" -> 1
             "Imports", "Imports & Addons", "Modules & Addons" -> 2

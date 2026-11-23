@@ -534,6 +534,7 @@ internal fun FullPlayerLandscape(
             AppleMusicQualityBadge(
                 state = state,
                 signalPath = signalPath,
+                player = player,
                 isTranslucent = LocalLiquidGlass.current,
                 onClick = onOpenSignalPath,
                 modifier = Modifier.offset(y = (-2).dp),

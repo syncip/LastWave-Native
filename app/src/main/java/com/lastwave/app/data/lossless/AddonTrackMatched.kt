@@ -13,5 +13,9 @@ internal class AddonTrackMatched : AbstractCoroutineContextElement(Key) {
     @Volatile
     var matched = false
 
+    /** TIDAL answered the search but has no matching song: the YouTube fallback is expected. */
+    @Volatile
+    var notOnTidal = false
+
     companion object Key : CoroutineContext.Key<AddonTrackMatched>
 }

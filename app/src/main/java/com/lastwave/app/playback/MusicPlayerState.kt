@@ -212,6 +212,8 @@ data class MusicPlayerState(
     val audioCodec: String? = null,
     /** Service the current audio streams from ("TIDAL", "YouTube", "Local"…); null when unknown. */
     val streamOrigin: String? = null,
+    /** Media id TIDAL searched for and did not have; the badge says so while it is current. */
+    val notOnTidalMediaId: String? = null,
     val isLossless: Boolean = false,
     val bitDepth: Int? = null,
     val samplingRateKHz: Double? = null,
