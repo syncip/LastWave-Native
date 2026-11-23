@@ -128,23 +128,7 @@ class LosslessMusicApi @Inject constructor(
     @Volatile
     private var failureCooldownUntilMs = 0L
 
-    val isConfigured: Boolean
-        get() {
-            if (System.currentTimeMillis() < failureCooldownUntilMs) return false
-            if (tidalAccount.isLoggedIn) return true
-            val addons = settingsPreferences.httpAddons.value
-            if (addons.any { it.enabled && it.url.isNotBlank() }) return true
-            val addonUrl = settingsPreferences.addonUrl.value
-            return settingsPreferences.addonEnabled.value && !addonUrl.isNullOrBlank()
-        }
-
-    /**
-     * True only while a recent backend failure is backing off. Unlike
-     * [isConfigured] (false on cold start before JNI loads — gating on it
-     * killed lossless entirely, see d625587), this is safe to skip on:
-     * the backend just failed, so attempting would only burn the resolve
-     * timeout before falling back to YouTube anyway.
-     */
+    /** True while the backend is backing off after recent failures. */
     val isCoolingDown: Boolean
         get() {
             val cooling = System.currentTimeMillis() < failureCooldownUntilMs
@@ -746,25 +730,12 @@ class LosslessMusicApi @Inject constructor(
         }
     }
 
-    suspend fun getAllEnabledCredentials(): List<BackendCredentials> = withContext(Dispatchers.IO) {
+    suspend fun getAllEnabledCredentials(): List<BackendCredentials> =
         listOfNotNull(
             BackendCredentials(baseUrl = TidalSource.BASE_URL, apiKey = "tidal").takeIf { tidalAccount.isLoggedIn },
-        ) + enabledAddonCredentials()
-    }
-
-    private fun enabledAddonCredentials(): List<BackendCredentials> {
-        val enabled = settingsPreferences.httpAddons.value.filter { it.enabled && it.url.isNotBlank() }
-        if (enabled.isNotEmpty()) {
-            return enabled.map {
-                BackendCredentials(baseUrl = AddonClient.normalizeBase(it.url), apiKey = "addon", isAddon = true)
-            }
+        ) + settingsPreferences.settings.first().enabledHttpAddons.map {
+            BackendCredentials(baseUrl = AddonClient.normalizeBase(it.url), apiKey = "addon", isAddon = true)
         }
-        val addonUrl = settingsPreferences.addonUrl.value
-        if (settingsPreferences.addonEnabled.value && !addonUrl.isNullOrBlank()) {
-            return listOf(BackendCredentials(baseUrl = AddonClient.normalizeBase(addonUrl), apiKey = "addon", isAddon = true))
-        }
-        return emptyList()
-    }
 
     /** The user's TIDAL account answers [TidalSource.BASE_URL]; every other base is an HTTP addon. */
     private fun sourceFor(baseUrl: String): LosslessSource =
