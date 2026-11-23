@@ -130,9 +130,9 @@ class InnerTubeMusicApi @Inject constructor(
 
     // Stream resolver & search methods
     fun peekCachedStream(videoId: String, maxBitrateBps: Int? = null): YouTubeAudioStream? =
-        peekCachedStreamImpl(videoId, maxBitrateBps)
+        peekCachedStreamImpl(synchronized(songCounterparts) { songCounterparts[videoId] } ?: videoId, maxBitrateBps)
     suspend fun resolveAudioStream(videoId: String, maxBitrateBps: Int? = null): YouTubeAudioStream =
-        resolveAudioStreamImpl(videoId, maxBitrateBps)
+        resolveAudioStreamImpl(songAudioId(videoId), maxBitrateBps)
     suspend fun warmPlaybackCipher(videoId: String) = warmPlaybackCipherImpl(videoId)
     suspend fun resolveDownloadStream(videoId: String): YouTubeAudioStream = resolveDownloadStreamImpl(videoId)
     suspend fun resolveVideoStreamBundle(videoId: String, avoidClientName: String? = null): SyncedVideoStreamBundle? = resolveVideoStreamBundleImpl(videoId, avoidClientName)
@@ -1664,7 +1664,31 @@ class InnerTubeMusicApi @Inject constructor(
      * Resolves the official music video (OMV) counterpart linked to an audio track (ATV)
      * by querying YouTube Music's /next endpoint (Metrolist / official YTM counterpart lookup).
      */
-    suspend fun findCounterpartVideoId(videoId: String, playlistId: String? = null): String? = withContext(Dispatchers.IO) {
+    suspend fun findCounterpartVideoId(videoId: String, playlistId: String? = null): String? =
+        findCounterpart(videoId, playlistId, MUSIC_VIDEO_TYPE_OMV)
+
+    /** Music video id -> its song's id (itself when it has none); bounded LRU. */
+    private val songCounterparts = object : LinkedHashMap<String, String>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 512
+    }
+
+    /**
+     * Mixes often hold the music video, whose longer intro and outro made
+     * TIDAL refuse the match and synced lyrics run late. Play the audio of
+     * YouTube Music's song counterpart instead, as its Song/Video switch does.
+     */
+    private suspend fun songAudioId(videoId: String): String {
+        synchronized(songCounterparts) { songCounterparts[videoId] }?.let { return it }
+        val song = kotlinx.coroutines.withTimeoutOrNull(SONG_COUNTERPART_BUDGET_MS) {
+            runCatching { findCounterpart(videoId, null, MUSIC_VIDEO_TYPE_ATV) }.getOrNull()
+        } ?: return videoId
+        if (song != videoId) android.util.Log.i("InnerTubeMusicApi", "Music video $videoId plays as song $song")
+        synchronized(songCounterparts) { songCounterparts[videoId] = song }
+        return song
+    }
+
+    /** The counterpart of [videoId] of [wantedType]: itself when it already is one. */
+    private suspend fun findCounterpart(videoId: String, playlistId: String?, wantedType: String): String? = withContext(Dispatchers.IO) {
         if (videoId.isBlank()) return@withContext null
         val config = getWebConfig()
         val isAuth = ytAuth.connection.value.isConnected
@@ -1694,14 +1718,14 @@ class InnerTubeMusicApi @Inject constructor(
         fun rendererId(renderer: JsonObject?): String? = renderer?.string("videoId")
             ?: renderer?.obj("navigationEndpoint")?.obj("watchEndpoint")?.string("videoId")
 
-        // Only an official video is trusted as is. A user upload (gameplay, edits)
+        // Only an official video (or song) is trusted as is. A user upload (gameplay, edits)
         // goes through the official search, and stays the fallback if that finds nothing.
         val currentEndpoint = root.asObject()?.obj("currentVideoEndpoint")?.obj("watchEndpoint")
         val currentType = currentEndpoint
             ?.obj("watchEndpointMusicSupportedConfigs")
             ?.obj("watchEndpointMusicConfig")
             ?.string("musicVideoType")
-        if (currentType == MUSIC_VIDEO_TYPE_OMV) {
+        if (currentType == wantedType) {
             return@withContext videoId
         }
 
@@ -1717,12 +1741,12 @@ class InnerTubeMusicApi @Inject constructor(
             val primaryId = rendererId(primary)
             if (primaryId != videoId && counterparts.none { rendererId(it) == videoId }) continue
 
-            if (!primaryId.isNullOrBlank() && musicVideoType(primary) == MUSIC_VIDEO_TYPE_OMV) {
+            if (!primaryId.isNullOrBlank() && musicVideoType(primary) == wantedType) {
                 return@withContext primaryId
             }
             for (counterpart in counterparts) {
                 val counterpartId = rendererId(counterpart)
-                if (!counterpartId.isNullOrBlank() && musicVideoType(counterpart) == MUSIC_VIDEO_TYPE_OMV) {
+                if (!counterpartId.isNullOrBlank() && musicVideoType(counterpart) == wantedType) {
                     return@withContext counterpartId
                 }
             }
@@ -3002,6 +3026,9 @@ class InnerTubeMusicApi @Inject constructor(
         const val MUSIC_API = "https://music.youtube.com/youtubei/v1"
         const val YOUTUBE_API = "https://www.youtube.com/youtubei/v1"
         internal const val MUSIC_VIDEO_TYPE_OMV = "MUSIC_VIDEO_TYPE_OMV"
+        internal const val MUSIC_VIDEO_TYPE_ATV = "MUSIC_VIDEO_TYPE_ATV"
+        /** Startup waits at most this long for the song lookup before playing the video's audio. */
+        private const val SONG_COUNTERPART_BUDGET_MS = 2_500L
         internal val VIDEO_ID_PATTERN = Regex("[A-Za-z0-9_-]{11}")
         const val LIBRARY_PLAYLISTS_BROWSE_ID = "FEmusic_liked_playlists"
         const val YT_HISTORY_BROWSE_ID = "FEmusic_history"

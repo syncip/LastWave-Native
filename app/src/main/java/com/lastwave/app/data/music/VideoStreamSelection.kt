@@ -66,9 +66,16 @@ private fun xmlEscape(value: String): String = value
     .replace(">", "&gt;")
     .replace("\"", "&quot;")
 
-/** Try the highest available resolution first; lower renditions remain fallbacks. */
+/**
+ * Best resolution up to 1080p first, higher ones only as fallbacks. 4K fetched
+ * in 512 KB ranges starved the decoder (0.6-2.3 s input gaps); 4K stays a manual pick.
+ */
 internal fun rankedForAutoPlayback(streams: List<YouTubeVideoStream>): List<YouTubeVideoStream> =
-    streams.sortedByDescending(::nominalHeight)
+    streams.sortedWith(
+        compareBy<YouTubeVideoStream> { nominalHeight(it) > AUTO_MAX_HEIGHT }.thenByDescending(::nominalHeight),
+    )
+
+private const val AUTO_MAX_HEIGHT = 1080
 
 private fun videoCodecRank(stream: YouTubeVideoStream): Int {
     val codec = stream.codec.orEmpty().lowercase()

@@ -1545,6 +1545,16 @@
     <string name="recommendation_source_tidal">TIDAL</string>
     <string name="settings_section_network">Network</string>
     <string name="player_tidal_versions">Versions on TIDAL</string>
+    <string name="stats_playback_title">Playback</string>
+    <string name="stats_playback_since">Since %1$s · %2$d songs (30 s or longer)</string>
+    <string name="stats_sources">Sources</string>
+    <string name="stats_quality">Quality</string>
+    <string name="stats_quality_hires">Hi-Res</string>
+    <string name="stats_quality_lossless">Lossless</string>
+    <string name="stats_quality_lossy">Lossy</string>
+    <string name="stats_traffic">Data used</string>
+    <string name="stats_traffic_wifi">Wi-Fi</string>
+    <string name="stats_traffic_metered">Mobile / metered</string>
     <string name="player_tidal_versions_hint">YouTube is playing %1$s. Pick a version to play it from the start.</string>
     <string name="player_tidal_versions_none">TIDAL has no version of this song.</string>
     <string name="player_signal_path">Signal path</string>

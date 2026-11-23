@@ -1086,6 +1086,16 @@
     <string name="toast_spotify_disconnected">Spotify-Konto getrennt</string>
     <string name="settings_section_network">Netzwerk</string>
     <string name="player_tidal_versions">Fassungen auf TIDAL</string>
+    <string name="stats_playback_title">Wiedergabe</string>
+    <string name="stats_playback_since">Seit %1$s · %2$d Songs (ab 30 s)</string>
+    <string name="stats_sources">Quellen</string>
+    <string name="stats_quality">Qualität</string>
+    <string name="stats_quality_hires">Hi-Res</string>
+    <string name="stats_quality_lossless">Lossless</string>
+    <string name="stats_quality_lossy">Verlustbehaftet</string>
+    <string name="stats_traffic">Datenverbrauch</string>
+    <string name="stats_traffic_wifi">WLAN</string>
+    <string name="stats_traffic_metered">Mobil / getaktet</string>
     <string name="player_tidal_versions_hint">YouTube spielt %1$s. Wähle eine Fassung, sie startet von vorne.</string>
     <string name="player_tidal_versions_none">TIDAL hat keine Fassung dieses Songs.</string>
     <string name="player_signal_path">Signalweg</string>

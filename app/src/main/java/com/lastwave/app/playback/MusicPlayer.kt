@@ -184,6 +184,7 @@ class MusicPlayer @Inject constructor(
     internal val usbDacMonitor: UsbDacMonitor,
     internal val exclusiveUsbOutput: ExclusiveUsbOutput,
     private val songPlayStatsRepository: dagger.Lazy<com.lastwave.app.data.repository.SongPlayStatsRepository>,
+    private val playbackSourceStats: dagger.Lazy<com.lastwave.app.data.repository.PlaybackSourceStats>,
     internal val internalDirectOutput: InternalDirectOutput,
     private val podcastProgressStore: com.lastwave.app.data.podcast.PodcastProgressStore,
     /** AutoEQ: started with the player so the saved correction is published before playback. */
@@ -947,7 +948,16 @@ class MusicPlayer @Inject constructor(
         } else 1.0
         val completedNaturally = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || playedRatio >= 0.85
         val wasSkip = !completedNaturally
+        val playedFrom = _state.value
+        val source = playedFrom.streamOrigin?.takeIf { it.isNotBlank() && previousPositionMs >= COUNTED_PLAY_MS }
+        val quality = when {
+            !playedFrom.isLossless -> com.lastwave.app.data.repository.PlaybackSourceStats.Quality.LOSSY
+            (playedFrom.bitDepth ?: 16) > 16 || (playedFrom.samplingRateKHz ?: 44.1) > 48.0 ->
+                com.lastwave.app.data.repository.PlaybackSourceStats.Quality.HI_RES
+            else -> com.lastwave.app.data.repository.PlaybackSourceStats.Quality.LOSSLESS
+        }
         applicationScope.launch(Dispatchers.IO) {
+            source?.let { playbackSourceStats.get().recordPlay(it, quality) }
             val repo = songPlayStatsRepository.get()
             repo.recordListenedMs(
                 title = previousTrack.title,
@@ -9190,6 +9200,8 @@ class MusicPlayer @Inject constructor(
         const val LOSSLESS_BACKGROUND_BUDGET_MS = 30_000L
         /** Largest runtime gap between the playing stream and a mid-song swap candidate. */
         const val HOT_SWAP_MAX_LENGTH_DRIFT_MS = 3_000L
+        /** A song counts toward the source/quality stats after this much listening (Last.fm's floor). */
+        const val COUNTED_PLAY_MS = 30_000L
         /** Past this, jumping back to 0:00 for another cut costs more than it gives. */
         const val OTHER_VERSION_RESTART_WINDOW_MS = 20_000L
         const val HOT_SWAP_PROBE_SPEED = 4f

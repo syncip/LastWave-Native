@@ -234,7 +234,10 @@ class HomeViewModel @Inject constructor(
     private val settingsPreferences: com.lastwave.app.data.local.SettingsPreferences,
     private val scrobbleRepository: com.lastwave.app.data.repository.ScrobbleRepository,
     private val artworkRepository: com.lastwave.app.data.artwork.ArtworkRepository,
+    private val playbackSourceStats: com.lastwave.app.data.repository.PlaybackSourceStats,
 ) : ViewModel() {
+
+    val playbackStats = playbackSourceStats.also { it.sampleTraffic() }.snapshot
 
     companion object {
         private fun isLastFmUsername(username: String): Boolean =
@@ -550,6 +553,7 @@ class HomeViewModel @Inject constructor(
     }
 
     fun refresh() {
+        playbackSourceStats.sampleTraffic()
         // When degraded to local stats while signed in, pull-to-refresh must
         // retry Last.fm instead of trapping the user until relogin.
         if (_uiState.value.isLocalStatsMode && !_uiState.value.isViewingFriend) {

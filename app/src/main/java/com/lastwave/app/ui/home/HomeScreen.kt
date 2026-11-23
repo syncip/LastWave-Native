@@ -272,11 +272,13 @@ fun HomeScreen(
                     expanded = {
                         Column {
                             if (showLocalBanner) localBanner()
+                            val playback by viewModel.playbackStats.collectAsStateWithLifecycle()
                             StatsCard(
                                 scrobbles = stats.scrobbles,
                                 trackCount = stats.trackCount,
                                 artistCount = stats.artistCount,
                                 albumCount = stats.albumCount,
+                                playback = playback.takeIf { !uiState.isViewingFriend },
                                 headlineLabel = headlineLabel,
                                 onOpenGenres = onOpenGenres,
                                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 0.dp),

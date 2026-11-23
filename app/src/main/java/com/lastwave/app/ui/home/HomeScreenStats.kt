@@ -329,6 +329,7 @@ internal fun StatsCard(
     albumCount: Long,
     onOpenGenres: () -> Unit,
     modifier: Modifier = Modifier,
+    playback: com.lastwave.app.data.repository.PlaybackSourceStats.Snapshot? = null,
     headlineLabel: String = "Scrobbles",
 ) {
     var visible by remember { mutableStateOf(false) }
@@ -393,6 +394,10 @@ internal fun StatsCard(
                     StatPill("Tracks", trackCount, Modifier.weight(1f))
                     StatPill("Artists", artistCount, Modifier.weight(1f))
                     StatPill("Albums", albumCount, Modifier.weight(1f))
+                }
+                playback?.let {
+                    Spacer(Modifier.height(8.dp))
+                    PlaybackStatsRow(it)
                 }
             }
         }
